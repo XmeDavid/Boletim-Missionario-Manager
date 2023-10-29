@@ -143,18 +143,35 @@ async fn fetch_boletins() -> Result<(), Box<dyn Error>> {
 }
 
 
+
 async fn download_file(url: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Getting Data...");
-    let response = reqwest::get(url)
-        .await?
-        .error_for_status()?;
-    println!("Got Data, Writing to file...");
-    let bytes = response.bytes().await?;
-    let _ = std::fs::write(output_path, &bytes);
-    
+    let mut response = reqwest::get(url).await?;
+    let content_length = response.headers().get("content-length")
+        .and_then(|val| val.to_str().ok())
+        .and_then(|val| val.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let mut downloaded_size: u64 = 0;
+    let mut buffer = Vec::new();
+    let mut file:File = File::create(output_path).unwrap();
+
+    while let Some(chunk) = response.chunk().await? {
+        buffer.extend_from_slice(&chunk);
+        downloaded_size += chunk.len() as u64;
+        let _ = file.write_all(&chunk);
+
+        println!(
+            "Downloading {}: {}/{} bytes ({:.2}%)",
+            output_path,
+            downloaded_size, content_length, (downloaded_size as f64/content_length as f64) * 100.0
+        );
+    }
+
     println!("Downloaded file to: {}", output_path);
     Ok(())
 }
+
+
 
 
 async fn download(id:String, path:&str) {
@@ -167,8 +184,6 @@ async fn download(id:String, path:&str) {
 
     let output_path = path.to_owned() + &boletim.name.to_owned() + "." + &boletim.file_type.to_owned();
     let _result = download_file(boletim.url.as_str(), output_path.as_str()).await;
-
-
 }
 
 async fn download_all(path:&str){
